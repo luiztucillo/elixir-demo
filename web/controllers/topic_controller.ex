@@ -3,6 +3,9 @@ defmodule Discuss.TopicController do
 
   alias Discuss.Topic
 
+  plug(Discuss.Plugs.RequireAuth when action in [:new, :create, :edit, :update, :delete])
+  plug(:check_topic_owner when action in [:update, :edit, :delete])
+
   def index(conn, _params) do
     topics = Repo.all(Topic)
     render(conn, "index.html", topics: topics)
@@ -14,13 +17,16 @@ defmodule Discuss.TopicController do
   end
 
   def create(conn, %{"topic" => topic}) do
-    changeset = Topic.changeset(%Topic{}, topic)
+    changeset = conn.assigns.user
+    |> build_assoc(:topics)
+    |> Topic.changeset(topic)
 
     case Repo.insert(changeset) do
       {:ok, _post} ->
         conn
         |> put_flash(:info, "Topic Created")
         |> redirect(to: topic_path(conn, :index))
+
       {:error, changeset} ->
         render(conn, "new.html", changeset: changeset)
     end
@@ -41,6 +47,7 @@ defmodule Discuss.TopicController do
         conn
         |> put_flash(:info, "Topic updated")
         |> redirect(to: topic_path(conn, :index))
+
       {:error, changeset} ->
         render(conn, "edit.html", changeset: changeset, topic: old_topic)
     end
@@ -48,10 +55,22 @@ defmodule Discuss.TopicController do
 
   def delete(conn, %{"id" => topic_id}) do
     Repo.get!(Topic, topic_id)
-    |> Repo.delete!
+    |> Repo.delete!()
 
     conn
     |> put_flash(:info, "Topic Deleted")
     |> redirect(to: topic_path(conn, :index))
+  end
+
+  def check_topic_owner(%{params: %{"id" => topic_id}} = conn, _params) do
+
+    if Repo.get(Topic, topic_id).user_id == conn.assigns.user.id do
+      conn
+    else
+      conn
+      |> put_flash(:error, "You cannot edit that")
+      |> redirect(to: topic_path(conn, :index))
+      |> halt
+    end
   end
 end
